@@ -1,30 +1,182 @@
-apiVersion: extensions/v1beta1 # for versions before 1.6.0 use extensions/v1beta1
+# Portworx Storage
+
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: portworx-sc-rep2
+provisioner: kubernetes.io/portworx-volume
+parameters:
+  repl: "2"
+  priority_io: "high"
+---
+
+# Each environment gets its own namespace
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-app-prod
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo-app-stage
+---
+
+# Deployments - app
+
+apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: codesuite-demo
+  name: demo-app
+  namespace: demo-app-prod
 spec:
   replicas: 3
   template:
     metadata:
       labels:
-        app: hello-world
+        app: demo
+        role: nginx
+        env: prod
     spec:
       containers:
-      - name: hello
-        image: nginx
+      - name: app
+        image: samuelmyers/aws-kube-codesuite:v002
         ports:
         - containerPort: 80
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: demo-app-stage
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: demo
+        role: nginx
+        env: stage
+    spec:
+      containers:
+      - name: app
+        image: samuelmyers/aws-kube-codesuite:v002
+        ports:
+        - containerPort: 80
+---
+
+# Deployment - mongo
+# (staging handled via individual pods)
+
+apiVersion: apps/v1beta1 # for versions >= 1.8.0 use apps/v1beta2
+kind: StatefulSet
+metadata:
+  name: demo-mongo
+  namespace: demo-app-prod
+spec:
+  serviceName: mongo
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: demo
+        role: mongo
+        env: prod
+    spec:
+      containers:
+        - name: mongo
+          image: mongo:3.6
+          command:
+            - mongod
+            - "--smallfiles"
+            - "--noprealloc"
+            - "--bind_ip_all"
+          ports:
+            - containerPort: 27017
+          volumeMounts:
+            - name: mongo-persistent-storage
+              mountPath: /data/db
+  volumeClaimTemplates:
+  - metadata:
+      name: mongo-persistent-storage
+      annotations:
+        volume.beta.kubernetes.io/storage-class: "portworx-sc-rep2"
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 10Gi
+---
+
+# Services - app
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: app
+  namespace: demo-app-prod
+spec:
+  type: ClusterIP
+  selector:
+    app: demo
+    role: nginx
+    env: prod
+  ports:
+  - name: demo-app-port
+    port: 80
+    targetPort: 80
+    protocol: TCP
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: codesuite-demo
+  name: app
+  namespace: demo-app-stage
 spec:
-  type: LoadBalancer
+  type: ClusterIP
   selector:
-    app: hello-world
+    app: demo
+    role: nginx
+    env: stage
   ports:
-  - name: hello-port
+  - name: demo-app-port
     port: 80
     targetPort: 80
     protocol: TCP
+---
+
+# Services - mongo
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: demo-app-prod
+spec:
+  type: ClusterIP
+  selector:
+    app: demo
+    role: mongo
+    env: prod
+  ports:
+  - name: demo-mongo-port
+    port: 27017
+    targetPort: 27017
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: demo-app-stage
+spec:
+  type: ClusterIP
+  selector:
+    app: demo
+    role: mongo
+    env: stage
+  ports:
+  - name: demo-mongo-port
+    port: 27017
+    targetPort: 27017
+---
