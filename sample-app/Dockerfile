@@ -1,22 +1,12 @@
-############################################
-# Dockerfile to build hello microservice
-# Based on python dockerhub image
-############################################
-
-# Set base image to python
-FROM python:3.5
-
-# File Author / Maintainer
-MAINTAINER Omar Lari
-
-# Copy source file and python req's
-COPY hello.py /usr/src/app/
-COPY requirements.txt /
+FROM python:3.6-alpine3.7
 
 # Install requirements
+COPY requirements.txt /
 RUN pip install -r /requirements.txt
 
-# Set default AWS region
+# Copy source file
+COPY hello.py /usr/src/app/
+
 ENV AWS_DEFAULT_REGION us-west-2
 
 EXPOSE 80
