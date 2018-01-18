@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo-mongo
+  namespace: demo-app-stage
+  labels:
+    app: demo
+    role: mongo
+    env: stage
+spec:
+  containers:
+    - name: mongo
+      image: mongo:3.6
+      command:
+        - mongod
+        - "--smallfiles"
+        - "--noprealloc"
+        - "--bind_ip_all"
+      ports:
+        - containerPort: 27017
+      volumeMounts:
+        - name: "$VOLUME_ID"
+          mountPath: /data/db
+  volumes:
+    - name: "$VOLUME_ID"
+      portworxVolume:
+        volumeID: "$VOLUME_ID"
