@@ -95,7 +95,7 @@ Resources:
               - sts:AssumeRole
       Path: /
 
-  LambdaKubernetesDeployment:
+  LambdaKubernetesProdDeployment:
     Type: AWS::Lambda::Function
     DependsOn:
       - CodePipelineLambdaRole
@@ -105,9 +105,25 @@ Resources:
         S3Bucket: !Ref LocalBucket
         S3Key: Archive.zip
       Role: !GetAtt 'CodePipelineLambdaRole.Arn'
-      Description: Update Kubernetes Deployment
+      Description: Update production environment via Kubernetes rolling update
       Timeout: 20
-      Handler: kube-lambda.lambda_handler
+      Handler: kube-lambda.deploy_prod
+      Runtime: python3.6
+      MemorySize: 128
+
+  LambdaKubernetesStageDeployment:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - CodePipelineLambdaRole
+      - LambdaCodePipelineExecutionPolicy
+    Properties:
+      Code:
+        S3Bucket: !Ref LocalBucket
+        S3Key: Archive.zip
+      Role: !GetAtt 'CodePipelineLambdaRole.Arn'
+      Description: Create staging environment with snapshot of production database
+      Timeout: 20
+      Handler: kube-lambda.deploy_stage
       Runtime: python3.6
       MemorySize: 128
 
@@ -271,7 +287,7 @@ Resources:
               OutputArtifacts:
                 - Name: BuildOutput
               RunOrder: 1
-        - Name: Deploy
+        - Name: DeployToStage
           Actions:
             - Name: UpdateDeployment
               ActionTypeId:
@@ -280,7 +296,20 @@ Resources:
                 Version: 1
                 Provider: Lambda
               Configuration:
-                FunctionName: !Ref LambdaKubernetesDeployment
+                FunctionName: !Ref LambdaKubernetesStageDeployment
+              InputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 1
+        - Name: DeployToProd
+          Actions:
+            - Name: UpdateDeployment
+              ActionTypeId:
+                Category: Invoke
+                Owner: AWS
+                Version: 1
+                Provider: Lambda
+              Configuration:
+                FunctionName: !Ref LambdaKubernetesProdDeployment
               InputArtifacts:
                 - Name: BuildOutput
               RunOrder: 1
