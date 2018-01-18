@@ -1,0 +1,11 @@
+certifi>=14.05.14
+six>=1.9.0
+python-dateutil>=2.5.3
+setuptools>=21.0.0
+urllib3!=1.21,>=1.19.1
+pyyaml>=3.12
+google-auth>=1.0.1
+ipaddress>=1.0.17
+websocket-client<=0.40.0,>=0.32.0
+requests
+requests-oauthlib

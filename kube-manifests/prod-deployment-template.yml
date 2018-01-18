@@ -1,0 +1,19 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: demo-app
+  namespace: demo-app-prod
+spec:
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: demo
+        role: nginx
+        env: prod
+    spec:
+      containers:
+      - name: app
+        image: $REPOSITORY_URI:$TAG
+        ports:
+        - containerPort: 80
