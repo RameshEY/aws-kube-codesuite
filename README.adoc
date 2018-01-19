@@ -7,9 +7,13 @@
 The CodeSuite Continuous Deployment reference architecture demonstrates how to achieve continuous
 deployment of an application to a Kubernetes cluster using AWS CodePipeline, AWS CodeCommit, AWS CodeBuild and AWS Lambda.
 
-Launching this AWS CloudFormation stack provisions a continuous deployment process that uses AWS CodePipeline
-to monitor an AWS CodeCommit repository for new commits, AWS CodeBuild to create a new Docker container image and to push
-it into Amazon ECR. Finally an AWS Lambda function with the Kubernetes Python SDK updates a Kubernetes deployment in a live cluster.
+The AWS CloudFormation will provision a pipeline which:
+
+- Monitors for new code (AWS CodeCommit)
+- Builds a Docker container from the repo (AWS CodeBuild)
+- Upload container for later use (AWS ECR)
+- Deploy a staging environment based on production database (AWS Lambda, Portworx, Kubernetes)
+- Deploy to production (AWS Lambda, Kubernetes)
 
 When you deploy the cloudformation stack there will be four parameters that are specific to your Kubernetes cluster. You will need the API endpoint, Certificate Authority Data, Client Certificate Data and Client Key Data.
 The last of these three are sensitive, the cloudformation parameter is marked with the "NoEcho" property set to true so that the contents are not exposed through cloudformation. In addition those strings are encrypted with the account default
@@ -20,9 +24,17 @@ image::architecture.png[Architecture]
 
 === Pre-Requisites
 
+==== Kubernetes
+
 A functioning Kubernetes cluster and config file to authenticate to the cluster, by default this is located at `~/.kube/config`
 
-Clone this repository
+If you do not already have a cluster, see link:https://github.com/aws-samples/aws-workshop-for-kubernetes[aws-workshop-for-kubernetes]
+
+==== Portworx
+
+Follow the link:https://docs.portworx.com/scheduler/kubernetes/install.html[Portworx installation instructions] to deploy onto Kubernetes
+
+=== Clone this repository
 
     git clone https://github.com/aws-samples/aws-kube-codesuite
 
@@ -103,6 +115,8 @@ You can then see the pipeline move through the various stages:
 
 image::pipeline.png[pipeline]
 
+When the staging environment is deployed, you can verify everything is as you expect before promoting to production.
+
 Once the final Lambda stage is complete you should be able to see the new deployment exposed through the same service load balancer.
 
     kubectl get svc codesuite-demo -o wide
@@ -137,5 +151,7 @@ link:/templates/deployment-pipeline.yaml[deployment-pipeline]
 Resources that compose the deployment pipeline include the CodeBuild project, the CodePipeline pipeline, an S3 bucket for deployment artifacts, and ECR repository for the container images and all necessary IAM roles used by those services.
 
 == License Summary
+
+Forked from link:https://github.com/aws-samples/aws-kube-codesuite[aws-kube-codesuite].
 
 This sample code is made available under a modified MIT license. See the LICENSE file.
