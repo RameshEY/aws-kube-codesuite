@@ -41,7 +41,7 @@ spec:
     spec:
       containers:
       - name: app
-        image: samuelmyers/aws-kube-codesuite:v002
+        image: samuelmyers/aws-kube-codesuite:v003
         ports:
         - containerPort: 80
 ---
@@ -61,7 +61,7 @@ spec:
     spec:
       containers:
       - name: app
-        image: samuelmyers/aws-kube-codesuite:v002
+        image: samuelmyers/aws-kube-codesuite:v003
         ports:
         - containerPort: 80
 ---
