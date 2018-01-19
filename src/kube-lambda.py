@@ -2,11 +2,6 @@ import yaml, boto3, botocore, json, zipfile
 from os import path
 from kubernetes import client, config
 from kubernetes.stream import stream
-from time import sleep
-
-s3 = boto3.resource('s3')
-code_pipeline = boto3.client('codepipeline')
-ssm = boto3.client('ssm')
 
 
 class PXVolume:
@@ -17,15 +12,40 @@ class PXVolume:
         self.name = split_row[1]
 
 
-def deploy_stage(event, context):
+def deploy_stage_entrypoint(event, context):
     build_json = download_build_json(event=event)
     download_templates(build_json=build_json)
     k8s_beta, k8s_core = kubernetes_auth(build_json=build_json)
     code_pipeline_job_id = event['CodePipeline.job']['id']
+    repository_uri = build_json["repository-uri"]
+    tag = build_json["tag"]
 
+    deploy_stage(k8s_core=k8s_core,
+                 k8s_beta=k8s_beta,
+                 repository_uri=repository_uri,
+                 tag=tag,
+                 code_pipeline_job_id=code_pipeline_job_id)
+
+
+def deploy_stage_local():
+    config.load_kube_config('/root/admin.conf')
+    k8s_beta = client.ExtensionsV1beta1Api()
+    k8s_core = client.CoreV1Api()
+    repository_uri = 'samuelmyers/aws-kube-codesuite'
+    tag = 'v003'
+    code_pipeline_job_id = None
+
+    deploy_stage(k8s_core=k8s_core,
+                 k8s_beta=k8s_beta,
+                 repository_uri=repository_uri,
+                 tag=tag,
+                 code_pipeline_job_id=code_pipeline_job_id)
+
+
+def deploy_stage(k8s_core, k8s_beta, repository_uri, tag, code_pipeline_job_id):
     # Update deployment template
-    inplace_change("/tmp/stage-deployment-template.yml", "$REPOSITORY_URI", build_json["repository-uri"])
-    inplace_change("/tmp/stage-deployment-template.yml", "$TAG", build_json["tag"])
+    inplace_change("/tmp/stage-deployment-template.yml", "$REPOSITORY_URI", repository_uri)
+    inplace_change("/tmp/stage-deployment-template.yml", "$TAG", tag)
     with open(path.join(path.dirname(__file__), "/tmp/stage-deployment-template.yml")) as f:
         deployment = yaml.load(f)
     stage_namespace = deployment["metadata"]["namespace"]
@@ -37,9 +57,9 @@ def deploy_stage(event, context):
 
         # Delete current stage pod
         pod_name = db_pod["metadata"]["name"]
-        k8s_core.delete_namespaced_pod(name=pod_name,
-                                       body=db_pod,
-                                       namespace=stage_namespace)
+        # k8s_core.delete_namespaced_pod(name=pod_name,
+        #                                body=db_pod,
+        #                                namespace=stage_namespace)
         snap_volume_id = snap_volume(k8s_core)
 
         # Update db template
@@ -48,34 +68,20 @@ def deploy_stage(event, context):
             db_pod = yaml.load(f)
 
         # Deploy database pod mounted to the snapshot volume
-        # Sometimes the new pod can't be recreated right away, so
-        # retry several times before failing
-        attempts = 10
-        sleep_between_attempts = 5
-        for i in range(attempts):
-            try:
-                k8s_core.create_namespaced_pod(name=pod_name,
-                                               body=db_pod,
-                                               namespace=stage_namespace)
-            except Exception as e:
-                if i == attempts-1:
-                    raise e
-                else:
-                    sleep(sleep_between_attempts)
-            else:
-                break
+        k8s_core.create_namespaced_pod(body=db_pod,
+                                       namespace=stage_namespace)
 
         # Update application deployment
         resp = k8s_beta.patch_namespaced_deployment(name=deployment["metadata"]["name"],
                                                     body=deployment,
-                                                    namespace=["metadata"]["namespace"])
+                                                    namespace=deployment["metadata"]["namespace"])
         print("Deployment created. status='%s'" % str(resp.status))
 
-    code_pipeline.put_job_success_result(jobId=code_pipeline_job_id)
+    pass_pipeline(code_pipeline_job_id)
     return 'Success'
 
 
-def deploy_prod(event, context):
+def deploy_prod_entrypoint(event, context):
     build_json = download_build_json(event=event)
     download_templates(build_json=build_json)
     k8s_beta, k8s_core = kubernetes_auth(build_json=build_json)
@@ -94,7 +100,7 @@ def deploy_prod(event, context):
                                                     namespace=["metadata"]["namespace"])
         print("Deployment created. status='%s'" % str(resp.status))
 
-    code_pipeline.put_job_success_result(jobId=code_pipeline_job_id)
+    pass_pipeline(code_pipeline_job_id)
     return 'Success'
 
 
@@ -104,6 +110,7 @@ def download_templates(build_json):
 
     :param build_json: Build step artifact data
     """
+    s3 = boto3.resource('s3')
     s3.meta.client.download_file(build_json["template-bucket"], 'config', '/tmp/config')
     s3.meta.client.download_file(build_json["template-bucket"], 'prod-deployment-template.yml', '/tmp/prod-deployment-template.yml')
     s3.meta.client.download_file(build_json["template-bucket"], 'stage-deployment-template.yml', '/tmp/stage-deployment-template.yml')
@@ -139,6 +146,7 @@ def kubernetes_auth(build_json):
     :param build_json: Configuration from Build step
     :return: Handles to Kubernetes BetaAPI, CoreAPI
     """
+    ssm = boto3.client('ssm')
     CA = ssm.get_parameter(Name='CA', WithDecryption=True)["Parameter"]["Value"]
     CLIENT_CERT = ssm.get_parameter(Name='ClientCert', WithDecryption=True)["Parameter"]["Value"]
     CLIENT_KEY = ssm.get_parameter(Name='ClientKey', WithDecryption=True)["Parameter"]["Value"]
@@ -232,11 +240,19 @@ def snap_volume(k8s_core):
     ])][0].id
 
 
+def pass_pipeline(code_pipeline_job_id=None):
+    if code_pipeline_job_id is None:
+        return
+    else:
+        code_pipeline = boto3.client('codepipeline')
+        code_pipeline.put_job_success_result(jobId=code_pipeline_job_id)
+
+
 class FailPipelineOnException:
     """
     Context manager. Any uncaught exceptions fail the pipeline
     """
-    def __init__(self, code_pipeline_job_id):
+    def __init__(self, code_pipeline_job_id=None):
         self.code_pipeline_job_id = code_pipeline_job_id
 
     def __enter__(self):
@@ -245,11 +261,16 @@ class FailPipelineOnException:
     def __exit__(self, type, value, traceback):
         if traceback is not None:
             failure_message = "Job failed: {}".format(value)
-            code_pipeline.put_job_failure_result(jobId=self.code_pipeline_job_id,
-                                                 failureDetails={
-                                                     'message': failure_message,
-                                                     'type': 'JobFailed'
-                                                 })
+            if self.code_pipeline_job_id is not None:
+                code_pipeline.put_job_failure_result(jobId=self.code_pipeline_job_id,
+                                                     failureDetails={
+                                                         'message': failure_message,
+                                                         'type': 'JobFailed'
+                                                     })
             print(failure_message)
             # This will cause the exception to re-raise
             return False
+
+
+if __name__ == '__main__':
+    deploy_stage_local()
