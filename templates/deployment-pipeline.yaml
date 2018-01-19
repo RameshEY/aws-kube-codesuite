@@ -107,7 +107,7 @@ Resources:
       Role: !GetAtt 'CodePipelineLambdaRole.Arn'
       Description: Update production environment via Kubernetes rolling update
       Timeout: 20
-      Handler: kube-lambda.deploy_prod
+      Handler: kube-lambda.deploy_prod_entrypoint
       Runtime: python3.6
       MemorySize: 128
 
@@ -123,7 +123,7 @@ Resources:
       Role: !GetAtt 'CodePipelineLambdaRole.Arn'
       Description: Create staging environment with snapshot of production database
       Timeout: 20
-      Handler: kube-lambda.deploy_stage
+      Handler: kube-lambda.deploy_stage_entrypoint
       Runtime: python3.6
       MemorySize: 128
 
