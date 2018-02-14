@@ -32,7 +32,7 @@ If you do not already have a cluster, see link:https://github.com/aws-samples/aw
 
 ==== Portworx
 
-Follow the link:https://docs.portworx.com/scheduler/kubernetes/install.html[Portworx installation instructions] to deploy onto Kubernetes
+Portworx offers link:https://portworx.com/use-case/kubernetes-storage/[Kubernetes Storage]. Follow the link:https://docs.portworx.com/scheduler/kubernetes/install.html[Portworx installation instructions] to deploy onto Kubernetes
 
 === Clone this repository
 
